@@ -143,6 +143,32 @@
 
 <script>
 const BACKEND_URL = "https://book-scanner-production.up.railway.app";
+const DASHSCOPE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
+const DASHSCOPE_KEY = "sk-6396906889714bfbb54b7ea67c4e542e";
+
+async function ocrDirect(b64, mimeType) {
+  const resp = await fetch(DASHSCOPE_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${DASHSCOPE_KEY}`
+    },
+    body: JSON.stringify({
+      model: 'qwen2.5-vl-3b-instruct',
+      messages: [{
+        role: 'user',
+        content: [
+          {type: 'image_url', image_url: {url: `data:${mimeType};base64,${b64}`}},
+          {type: 'text', text: '这是一本书的封面照片。请提取以下信息并以 JSON 格式返回：{"title":"书名","author":"作者","publisher":"出版社","confidence":"high/medium/low"}\n只返回 JSON，不要其他文字。'}
+        ]
+      }]
+    })
+  });
+  const data = await resp.json();
+  let raw = data.choices[0].message.content.trim();
+  if (raw.startsWith('```')) raw = raw.replace(/^```json?\n?/, '').replace(/```$/, '').trim();
+  return JSON.parse(raw);
+}
 
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -162,22 +188,18 @@ document.getElementById('file-input').addEventListener('change', async (e) => {
   const b64 = await toBase64(file);
   const mime = file.type || 'image/jpeg';
   try {
-    // 第一阶段：OCR识别书名
-    const ctrl1 = new AbortController();
-    const t1 = setTimeout(() => ctrl1.abort(), 30000);
-    const ocrResp = await fetch(`${BACKEND_URL}/scan/ocr`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({image: b64, mime_type: mime}),
-      signal: ctrl1.signal
-    });
-    clearTimeout(t1);
-    if (!ocrResp.ok) {
-      const err = await ocrResp.json().catch(() => ({detail: '识别失败'}));
-      renderError(err.detail || '识别失败，请重试');
+    // 第一阶段：OCR直连DashScope（手机→中国服务器，最快）
+    let ocr;
+    try {
+      ocr = await ocrDirect(b64, mime);
+    } catch(err) {
+      renderError('OCR识别失败，请重试');
       return;
     }
-    const ocr = await ocrResp.json();
+    if (!ocr.title) {
+      renderError('无法识别书名，请重新拍摄');
+      return;
+    }
     // OCR完成，先展示书名
     document.getElementById('step-ocr').className = 'loading-step done';
     document.getElementById('step-douban').className = 'loading-step active';
