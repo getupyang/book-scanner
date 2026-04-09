@@ -126,14 +126,27 @@ async def scan_douban(req: DoubanRequest):
     logging.info(f"[scan/douban] 搜索{t1-t0:.2f}s → {search_result['subject_id'] if search_result else 'None'}")
     if not search_result:
         return {"score": "", "votes": "", "pub_year": "", "comments": [], "douban_url": "", "douban_error": "豆瓣未找到此书"}
+    # 搜索结果先返回评分，同时异步拿短评不阻塞
     return {
         "score": search_result["score"],
         "votes": search_result["votes"],
         "pub_year": search_result["pub_year"],
+        "subject_id": search_result["subject_id"],
         "comments": [],
         "douban_url": search_result["douban_url"],
         "douban_error": "",
     }
+
+class CommentsRequest(BaseModel):
+    subject_id: str
+
+@app.post("/scan/comments")
+async def scan_comments(req: CommentsRequest):
+    loop = asyncio.get_event_loop()
+    t0 = time.time()
+    detail = await loop.run_in_executor(None, get_book_detail, req.subject_id)
+    logging.info(f"[scan/comments] {time.time()-t0:.2f}s → {len(detail.get('comments',[]))}条")
+    return {"comments": detail.get("comments", [])}
 
 @app.post("/scan/manual")
 async def scan_manual(req: ManualRequest):

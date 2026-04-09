@@ -183,7 +183,7 @@ document.getElementById('file-input').addEventListener('change', async (e) => {
     document.getElementById('step-douban').className = 'loading-step active';
     renderPartial(ocr);
 
-    // 第二阶段：查豆瓣
+    // 第二阶段：查豆瓣评分
     const ctrl2 = new AbortController();
     const t2 = setTimeout(() => ctrl2.abort(), 30000);
     const dbResp = await fetch(`${BACKEND_URL}/scan/douban`, {
@@ -197,7 +197,23 @@ document.getElementById('file-input').addEventListener('change', async (e) => {
       renderDouban({douban_error: '豆瓣查询失败'});
       return;
     }
-    renderDouban(await dbResp.json());
+    const douban = await dbResp.json();
+    renderDouban(douban);
+
+    // 第三阶段：异步加载短评（不阻塞主流程）
+    if (douban.subject_id) {
+      fetch(`${BACKEND_URL}/scan/comments`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({subject_id: douban.subject_id})
+      }).then(r => r.json()).then(data => {
+        if (data.comments && data.comments.length > 0) {
+          document.getElementById('res-comments').innerHTML = data.comments.map(c =>
+            `<div class="comment-item">${c}</div>`).join('');
+          document.getElementById('card-comments').style.display = 'block';
+        }
+      }).catch(() => {});
+    }
   } catch(e) {
     if (e.name === 'AbortError') {
       renderError('识别超时，请重试或检查网络');
@@ -230,7 +246,7 @@ function toBase64(file) {
     const img = new Image();
     const url = URL.createObjectURL(file);
     img.onload = () => {
-      const MAX = 1200;
+      const MAX = 800;
       let w = img.width, h = img.height;
       if (w > MAX || h > MAX) {
         if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
@@ -240,7 +256,7 @@ function toBase64(file) {
       canvas.width = w; canvas.height = h;
       canvas.getContext('2d').drawImage(img, 0, 0, w, h);
       URL.revokeObjectURL(url);
-      resolve(canvas.toDataURL('image/jpeg', 0.8).split(',')[1]);
+      resolve(canvas.toDataURL('image/jpeg', 0.6).split(',')[1]);
     };
     img.src = url;
   });
