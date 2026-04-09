@@ -160,27 +160,47 @@ document.getElementById('file-input').addEventListener('change', async (e) => {
   document.getElementById('step-ocr').className = 'loading-step active';
   document.getElementById('step-douban').className = 'loading-step';
   const b64 = await toBase64(file);
+  const mime = file.type || 'image/jpeg';
   try {
-    document.getElementById('step-ocr').className = 'loading-step done';
-    document.getElementById('step-douban').className = 'loading-step active';
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 60000);
-    const resp = await fetch(`${BACKEND_URL}/scan`, {
+    // 第一阶段：OCR识别书名
+    const ctrl1 = new AbortController();
+    const t1 = setTimeout(() => ctrl1.abort(), 30000);
+    const ocrResp = await fetch(`${BACKEND_URL}/scan/ocr`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({image: b64, mime_type: file.type || 'image/jpeg'}),
-      signal: ctrl.signal
+      body: JSON.stringify({image: b64, mime_type: mime}),
+      signal: ctrl1.signal
     });
-    clearTimeout(timer);
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({detail: '请求失败'}));
+    clearTimeout(t1);
+    if (!ocrResp.ok) {
+      const err = await ocrResp.json().catch(() => ({detail: '识别失败'}));
       renderError(err.detail || '识别失败，请重试');
       return;
     }
-    renderResult(await resp.json());
+    const ocr = await ocrResp.json();
+    // OCR完成，先展示书名
+    document.getElementById('step-ocr').className = 'loading-step done';
+    document.getElementById('step-douban').className = 'loading-step active';
+    renderPartial(ocr);
+
+    // 第二阶段：查豆瓣
+    const ctrl2 = new AbortController();
+    const t2 = setTimeout(() => ctrl2.abort(), 30000);
+    const dbResp = await fetch(`${BACKEND_URL}/scan/douban`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({title: ocr.title, author: ocr.author}),
+      signal: ctrl2.signal
+    });
+    clearTimeout(t2);
+    if (!dbResp.ok) {
+      renderDouban({douban_error: '豆瓣查询失败'});
+      return;
+    }
+    renderDouban(await dbResp.json());
   } catch(e) {
     if (e.name === 'AbortError') {
-      renderError('识别超时（>60秒），请重试或检查网络');
+      renderError('识别超时，请重试或检查网络');
     } else {
       renderError('网络错误，请检查连接');
     }
@@ -226,9 +246,19 @@ function toBase64(file) {
   });
 }
 
-function renderResult(data) {
-  document.getElementById('res-title').textContent = data.title || '未知书名';
-  document.getElementById('res-author').textContent = data.author ? `作者：${data.author}` : '';
+// 第一阶段：OCR完成，显示书名，评分区显示loading
+function renderPartial(ocr) {
+  document.getElementById('res-title').textContent = ocr.title || '未知书名';
+  document.getElementById('res-author').textContent = ocr.author ? `作者：${ocr.author}` : '';
+  document.getElementById('res-year').textContent = '';
+  document.getElementById('res-score-area').innerHTML = '<div class="score-na">正在查询豆瓣评分...</div>';
+  document.getElementById('card-comments').style.display = 'none';
+  document.getElementById('card-error').style.display = 'none';
+  showScreen('screen-result');
+}
+
+// 第二阶段：豆瓣数据到了，填入评分评论
+function renderDouban(data) {
   const yearEl = document.getElementById('res-year');
   if (data.pub_year) {
     const age = new Date().getFullYear() - parseInt(data.pub_year);
@@ -236,8 +266,6 @@ function renderResult(data) {
       ? `⚠️ ${data.pub_year}年出版（${age}年前的老书）`
       : `${data.pub_year}年出版`;
     yearEl.className = age > 10 ? 'pub-year old' : 'pub-year';
-  } else {
-    yearEl.textContent = '';
   }
   const scoreArea = document.getElementById('res-score-area');
   if (data.score && data.score !== '0') {
@@ -247,22 +275,16 @@ function renderResult(data) {
   } else {
     scoreArea.innerHTML = '<div class="score-na">豆瓣暂无评分</div>';
   }
-  const commentsEl = document.getElementById('res-comments');
   if (data.comments && data.comments.length > 0) {
-    commentsEl.innerHTML = data.comments.map(c =>
+    document.getElementById('res-comments').innerHTML = data.comments.map(c =>
       `<div class="comment-item">${c}</div>`).join('');
     document.getElementById('card-comments').style.display = 'block';
-  } else {
-    document.getElementById('card-comments').style.display = 'none';
   }
-  const errEl = document.getElementById('card-error');
   if (data.douban_error) {
+    const errEl = document.getElementById('card-error');
     errEl.textContent = data.douban_error;
     errEl.style.display = 'block';
-  } else {
-    errEl.style.display = 'none';
   }
-  showScreen('screen-result');
 }
 
 function renderError(msg) {
