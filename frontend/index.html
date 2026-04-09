@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>书店扫书</title>
+  <link rel="manifest" href="manifest.json">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+      background: #f5f5f5;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .screen { display: none; width: 100%; max-width: 480px; padding: 24px 16px; }
+    .screen.active { display: flex; flex-direction: column; align-items: center; }
+
+    /* 首屏 */
+    #screen-home { justify-content: center; min-height: 100vh; gap: 24px; }
+    .app-title { font-size: 24px; font-weight: 700; color: #1a1a2e; }
+    .app-subtitle { font-size: 14px; color: #888; }
+    .btn-camera {
+      width: 160px; height: 160px; border-radius: 50%;
+      background: #1a1a2e; border: none; cursor: pointer;
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 8px; color: white;
+    }
+    .btn-camera svg { width: 48px; height: 48px; }
+    .btn-camera span { font-size: 16px; }
+    #file-input { display: none; }
+
+    /* Loading 屏 */
+    #screen-loading { justify-content: center; min-height: 100vh; gap: 16px; }
+    .loading-step { font-size: 16px; color: #555; }
+    .loading-step.done { color: #4CAF50; }
+    .loading-step.active { color: #1a1a2e; font-weight: 600; }
+    .spinner {
+      width: 40px; height: 40px; border: 3px solid #eee;
+      border-top-color: #1a1a2e; border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* 结果屏 */
+    #screen-result { gap: 16px; padding-bottom: 40px; }
+    .card { width: 100%; background: white; border-radius: 16px; padding: 20px; }
+    .book-title { font-size: 22px; font-weight: 700; color: #1a1a2e; margin-bottom: 4px; }
+    .book-author { font-size: 14px; color: #666; margin-bottom: 8px; }
+    .pub-year { font-size: 13px; color: #888; }
+    .pub-year.old { color: #e67e22; font-weight: 600; }
+    .score-number { font-size: 56px; font-weight: 800; color: #1a1a2e; line-height: 1; text-align: center; }
+    .score-votes { font-size: 13px; color: #888; text-align: center; margin-top: 4px; }
+    .score-na { font-size: 18px; color: #aaa; text-align: center; }
+    .card-label { font-size: 13px; font-weight: 600; color: #888; margin-bottom: 12px; }
+    .comment-item {
+      padding: 10px 0; border-bottom: 1px solid #f0f0f0;
+      font-size: 14px; color: #333; line-height: 1.6;
+    }
+    .comment-item:last-child { border-bottom: none; }
+    .error-card { width: 100%; background: #fff3f3; border-radius: 16px; padding: 16px; color: #c0392b; font-size: 14px; }
+    .btn-secondary {
+      width: 100%; padding: 14px; border: 2px solid #1a1a2e;
+      background: white; border-radius: 12px; font-size: 16px;
+      cursor: pointer; color: #1a1a2e; font-weight: 600;
+    }
+    .btn-primary {
+      width: 100%; padding: 14px; background: #1a1a2e;
+      border: none; border-radius: 12px; font-size: 16px;
+      cursor: pointer; color: white; font-weight: 600;
+    }
+
+    /* 手动输入弹层 */
+    .overlay {
+      display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.5); z-index: 100;
+      align-items: center; justify-content: center;
+    }
+    .overlay.active { display: flex; }
+    .modal {
+      background: white; border-radius: 16px; padding: 24px;
+      width: 90%; max-width: 400px; display: flex; flex-direction: column; gap: 10px;
+    }
+    .modal-title { font-size: 16px; font-weight: 600; }
+    .modal input {
+      width: 100%; padding: 10px 12px; border: 1px solid #ddd;
+      border-radius: 8px; font-size: 16px; outline: none;
+    }
+    .modal input:focus { border-color: #1a1a2e; }
+  </style>
+</head>
+<body>
+
+<div id="screen-home" class="screen active">
+  <div class="app-title">📚 书店扫书</div>
+  <div class="app-subtitle">拍封面，看豆瓣评分</div>
+  <button class="btn-camera" onclick="document.getElementById('file-input').click()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+      <circle cx="12" cy="13" r="4"/>
+    </svg>
+    <span>拍封面</span>
+  </button>
+  <input type="file" id="file-input" accept="image/*" capture="environment">
+</div>
+
+<div id="screen-loading" class="screen">
+  <div class="spinner"></div>
+  <div id="step-ocr" class="loading-step active">⏳ 正在识别书名...</div>
+  <div id="step-douban" class="loading-step">　　查询豆瓣评分...</div>
+</div>
+
+<div id="screen-result" class="screen">
+  <div class="card" id="card-book">
+    <div class="book-title" id="res-title"></div>
+    <div class="book-author" id="res-author"></div>
+    <div class="pub-year" id="res-year"></div>
+  </div>
+  <div class="card" id="card-score">
+    <div id="res-score-area"></div>
+  </div>
+  <div class="card" id="card-comments" style="display:none">
+    <div class="card-label">豆瓣热门短评</div>
+    <div id="res-comments"></div>
+  </div>
+  <div class="error-card" id="card-error" style="display:none"></div>
+  <button class="btn-secondary" onclick="openManual()">结果不对？手动输入书名</button>
+  <button class="btn-primary" onclick="goHome()">再拍一本</button>
+</div>
+
+<div id="overlay-manual" class="overlay">
+  <div class="modal">
+    <div class="modal-title">手动输入书名</div>
+    <input id="manual-title" type="text" placeholder="书名" />
+    <input id="manual-author" type="text" placeholder="作者（可选）" />
+    <button class="btn-primary" onclick="submitManual()">查询</button>
+    <button class="btn-secondary" style="margin-top:4px" onclick="closeManual()">取消</button>
+  </div>
+</div>
+
+<script>
+const BACKEND_URL = "http://localhost:8090";
+
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+function goHome() { showScreen('screen-home'); }
+function openManual() { document.getElementById('overlay-manual').classList.add('active'); }
+function closeManual() { document.getElementById('overlay-manual').classList.remove('active'); }
+
+document.getElementById('file-input').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  e.target.value = '';
+  showScreen('screen-loading');
+  document.getElementById('step-ocr').className = 'loading-step active';
+  document.getElementById('step-douban').className = 'loading-step';
+  const b64 = await toBase64(file);
+  try {
+    document.getElementById('step-ocr').className = 'loading-step done';
+    document.getElementById('step-douban').className = 'loading-step active';
+    const resp = await fetch(`${BACKEND_URL}/scan`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({image: b64, mime_type: file.type || 'image/jpeg'})
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({detail: '请求失败'}));
+      renderError(err.detail || '识别失败，请重试');
+      return;
+    }
+    renderResult(await resp.json());
+  } catch(e) {
+    renderError('网络错误，请检查连接');
+  }
+});
+
+async function submitManual() {
+  const title = document.getElementById('manual-title').value.trim();
+  const author = document.getElementById('manual-author').value.trim();
+  if (!title) return;
+  closeManual();
+  showScreen('screen-loading');
+  try {
+    const resp = await fetch(`${BACKEND_URL}/scan/manual`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({title, author})
+    });
+    renderResult(await resp.json());
+  } catch(e) {
+    renderError('查询失败，请重试');
+  }
+}
+
+function toBase64(file) {
+  return new Promise(resolve => {
+    const r = new FileReader();
+    r.onload = e => resolve(e.target.result.split(',')[1]);
+    r.readAsDataURL(file);
+  });
+}
+
+function renderResult(data) {
+  document.getElementById('res-title').textContent = data.title || '未知书名';
+  document.getElementById('res-author').textContent = data.author ? `作者：${data.author}` : '';
+  const yearEl = document.getElementById('res-year');
+  if (data.pub_year) {
+    const age = new Date().getFullYear() - parseInt(data.pub_year);
+    yearEl.textContent = age > 10
+      ? `⚠️ ${data.pub_year}年出版（${age}年前的老书）`
+      : `${data.pub_year}年出版`;
+    yearEl.className = age > 10 ? 'pub-year old' : 'pub-year';
+  } else {
+    yearEl.textContent = '';
+  }
+  const scoreArea = document.getElementById('res-score-area');
+  if (data.score && data.score !== '0') {
+    scoreArea.innerHTML = `
+      <div class="score-number">${data.score}</div>
+      <div class="score-votes">${data.votes ? parseInt(data.votes).toLocaleString() + ' 人评分' : ''}</div>`;
+  } else {
+    scoreArea.innerHTML = '<div class="score-na">豆瓣暂无评分</div>';
+  }
+  const commentsEl = document.getElementById('res-comments');
+  if (data.comments && data.comments.length > 0) {
+    commentsEl.innerHTML = data.comments.map(c =>
+      `<div class="comment-item">${c}</div>`).join('');
+    document.getElementById('card-comments').style.display = 'block';
+  } else {
+    document.getElementById('card-comments').style.display = 'none';
+  }
+  const errEl = document.getElementById('card-error');
+  if (data.douban_error) {
+    errEl.textContent = data.douban_error;
+    errEl.style.display = 'block';
+  } else {
+    errEl.style.display = 'none';
+  }
+  showScreen('screen-result');
+}
+
+function renderError(msg) {
+  document.getElementById('res-title').textContent = '识别失败';
+  document.getElementById('res-author').textContent = '';
+  document.getElementById('res-year').textContent = '';
+  document.getElementById('res-score-area').innerHTML = '';
+  document.getElementById('card-comments').style.display = 'none';
+  document.getElementById('card-error').textContent = msg;
+  document.getElementById('card-error').style.display = 'block';
+  showScreen('screen-result');
+}
+</script>
+</body>
+</html>
