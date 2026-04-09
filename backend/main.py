@@ -123,19 +123,14 @@ async def scan_douban(req: DoubanRequest):
     t0 = time.time()
     search_result = await loop.run_in_executor(None, search_book, req.title, req.author)
     t1 = time.time()
+    logging.info(f"[scan/douban] 搜索{t1-t0:.2f}s → {search_result['subject_id'] if search_result else 'None'}")
     if not search_result:
-        logging.info(f"[scan/douban] 未命中 {t1-t0:.2f}s")
         return {"score": "", "votes": "", "pub_year": "", "comments": [], "douban_url": "", "douban_error": "豆瓣未找到此书"}
-    subject_id = search_result["subject_id"]
-    detail = await loop.run_in_executor(None, get_book_detail, subject_id)
-    t2 = time.time()
-    logging.info(f"[scan/douban] 搜索{t1-t0:.2f}s 详情{t2-t1:.2f}s 总{t2-t0:.2f}s")
-    pub_year = detail.get("pub_year") or search_result["pub_year"]
     return {
         "score": search_result["score"],
         "votes": search_result["votes"],
-        "pub_year": pub_year,
-        "comments": detail.get("comments", []),
+        "pub_year": search_result["pub_year"],
+        "comments": [],
         "douban_url": search_result["douban_url"],
         "douban_error": "",
     }
