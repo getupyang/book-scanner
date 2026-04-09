@@ -31,7 +31,7 @@ def extract_book_info(image_path: str) -> dict:
         mime = "image/jpeg" if ext in ["jpg", "jpeg"] else f"image/{ext}"
         client = _get_client()
         response = client.chat.completions.create(
-            model="qwen-vl-max-latest",
+            model="qwen-vl-plus",
             messages=[{
                 "role": "user",
                 "content": [
@@ -52,7 +52,7 @@ def extract_book_info_from_base64(image_b64: str, mime_type: str = "image/jpeg")
     try:
         client = _get_client()
         response = client.chat.completions.create(
-            model="qwen-vl-max-latest",
+            model="qwen-vl-plus",
             messages=[{
                 "role": "user",
                 "content": [

@@ -74,13 +74,13 @@ async def scan(req: ScanRequest):
         douban_url = search_result["douban_url"]
         detail = await loop.run_in_executor(None, get_book_detail, subject_id)
         t3 = time.time()
-        logging.info(f"[scan] 豆瓣详情: {t3-t2:.2f}s | 总计: {t3-t0:.2f}s")
+        logging.info(f"[scan] 豆瓣详情: {t3-t2:.2f}s | 服务端总计: {t3-t0:.2f}s")
         comments = detail.get("comments", [])
         if not pub_year and detail.get("pub_year"):
             pub_year = detail["pub_year"]
     else:
         douban_error = "豆瓣未找到此书"
-        logging.info(f"[scan] 豆瓣未命中 | 总计: {t2-t0:.2f}s")
+        logging.info(f"[scan] 豆瓣未命中 | 服务端总计: {t2-t0:.2f}s")
 
     return ScanResponse(
         title=title, author=author, score=score, votes=votes,
