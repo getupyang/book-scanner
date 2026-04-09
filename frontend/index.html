@@ -104,7 +104,7 @@
     </svg>
     <span>拍封面</span>
   </button>
-  <input type="file" id="file-input" accept="image/*" capture="environment">
+  <input type="file" id="file-input" accept="image/*">
 </div>
 
 <div id="screen-loading" class="screen">
@@ -163,11 +163,15 @@ document.getElementById('file-input').addEventListener('change', async (e) => {
   try {
     document.getElementById('step-ocr').className = 'loading-step done';
     document.getElementById('step-douban').className = 'loading-step active';
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 60000);
     const resp = await fetch(`${BACKEND_URL}/scan`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({image: b64, mime_type: file.type || 'image/jpeg'})
+      body: JSON.stringify({image: b64, mime_type: file.type || 'image/jpeg'}),
+      signal: ctrl.signal
     });
+    clearTimeout(timer);
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({detail: '请求失败'}));
       renderError(err.detail || '识别失败，请重试');
@@ -175,7 +179,11 @@ document.getElementById('file-input').addEventListener('change', async (e) => {
     }
     renderResult(await resp.json());
   } catch(e) {
-    renderError('网络错误，请检查连接');
+    if (e.name === 'AbortError') {
+      renderError('识别超时（>60秒），请重试或检查网络');
+    } else {
+      renderError('网络错误，请检查连接');
+    }
   }
 });
 

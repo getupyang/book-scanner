@@ -60,7 +60,7 @@ def search_book(title: str, author: str = "") -> Optional[dict]:
         "douban_url": f"https://book.douban.com/subject/{subject_id}/",
     }
 
-def get_book_detail(subject_id: str, delay: float = 0.5) -> dict:
+def get_book_detail(subject_id: str, delay: float = 0.1) -> dict:
     time.sleep(delay)
     url = f"https://book.douban.com/subject/{subject_id}/"
     body = _fetch(url)
