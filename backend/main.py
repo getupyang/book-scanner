@@ -1,5 +1,5 @@
 # backend/main.py
-import asyncio, os, time, logging
+import asyncio, os, time, logging, re
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -117,11 +117,30 @@ async def scan_ocr(req: ScanRequest):
         confidence=ocr_result.get("confidence", "low"),
     )
 
+def _clean_title(raw: str) -> str:
+    """清洗OCR书名，去掉噪音，提高豆瓣搜索命中率"""
+    # 去掉英文标题部分（连续英文大写单词）
+    t = re.sub(r'\b[A-Z][A-Z\s]+[A-Z]\b', '', raw)
+    # 去掉括号及其内容：(上)(下)(一) 等
+    t = re.sub(r'[（(][上下一二三四五六七八九十\dⅠⅡⅢIVV]+[）)]', '', t)
+    # 去掉"著/译/编"等后缀
+    t = re.sub(r'[\s·]*[著译编]+$', '', t)
+    return t.strip() or raw
+
+def _clean_author(raw: str) -> str:
+    """清洗OCR作者，去掉 [国籍]、著、译等"""
+    a = re.sub(r'\[.*?\]', '', raw)
+    a = re.sub(r'[\s]*[著译编][\s]*', ' ', a)
+    return a.strip().split()[0] if a.strip() else raw
+
 @app.post("/scan/douban")
 async def scan_douban(req: DoubanRequest):
     loop = asyncio.get_event_loop()
     t0 = time.time()
-    search_result = await loop.run_in_executor(None, search_book, req.title, req.author)
+    clean_title = _clean_title(req.title)
+    clean_author = _clean_author(req.author)
+    logging.info(f"[scan/douban] 清洗: '{req.title}' → '{clean_title}', '{req.author}' → '{clean_author}'")
+    search_result = await loop.run_in_executor(None, search_book, clean_title, clean_author)
     t1 = time.time()
     logging.info(f"[scan/douban] 搜索{t1-t0:.2f}s → {search_result['subject_id'] if search_result else 'None'}")
     if not search_result:

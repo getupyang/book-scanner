@@ -34,3 +34,10 @@ def test_get_detail_returns_comments():
 def test_search_not_found_returns_none():
     result = search_book("xyzxyzxyz完全不存在的书名123456", "")
     assert result is None
+
+def test_search_with_noisy_ocr_title():
+    """OCR可能返回包含英文标题、(上)等噪音的书名，清洗后应能搜到"""
+    # 直接用清洗后的书名搜索
+    result = search_book("街道的美学", "芦原义信")
+    assert result is not None
+    assert float(result["score"]) > 0
